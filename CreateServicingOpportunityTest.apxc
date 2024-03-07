@@ -1,61 +1,73 @@
 @isTest
-public class CreateServicingOpportunityTest {
-    
+private class CreateServicingOpportunityTest {
 
     @testSetup
-    static void setupTestData() {
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
-        List<Opportunity> closedWonOpps = new List<Opportunity>();
+    static void setup() {
+        // Create test data
+        List<Opportunity> testOpportunities = new List<Opportunity>();
+
+        // Create a 'Servicing' Record Type
+        RecordType servicingRecordType = createRecordType('Opportunity', 'Servicing');
+
+        // Create a 'New Deal' Record Type
+        RecordType newDealRecordType = createRecordType('Opportunity', 'New Deal');
+
+        // Create some 'New Deal' opportunities
         for (Integer i = 0; i < 5; i++) {
             Opportunity opp = new Opportunity(
-                Name = 'Closed Won Opp ' + i,
-                AccountId = acc.Id,
-                StageName = 'Closed Won',
-                CloseDate = Date.today().addMonths(-5) 
+                Name = 'Test Opportunity ' + i,
+                CloseDate = Date.today().addDays(15),
+                RecordTypeId = newDealRecordType.Id,
+                StageName = 'Prospecting',
+                DaysInNewDealRT__c = Date.today().daysBetween(Date.today().addMonths(-7))
             );
-            closedWonOpps.add(opp);
+            testOpportunities.add(opp);
         }
-        insert closedWonOpps;
+
+        // Create some closed 'New Deal' opportunities
+        for (Integer i = 0; i < 3; i++) {
+            Opportunity opp = new Opportunity(
+                Name = 'Closed Opportunity ' + i,
+                CloseDate = Date.today().addDays(-15),
+                RecordTypeId = newDealRecordType.Id,
+                StageName = 'Closed Won'
+            );
+            testOpportunities.add(opp);
+        }
+
+        insert testOpportunities;
     }
-    
-    // Success test
-    @isTest
-    static void testCreateServicingOpportunitySuccess() {
-        Test.startTest();
-        CreateServicingOpportunity scheduler = new CreateServicingOpportunity();
-        scheduler.execute(null);
-        Test.stopTest();
-        
-        // Verify that Closed Won Opportunities are updated to Servicing
-        List<Opportunity> updatedOpps = [
-            SELECT Id, StageName, RecordTypeId, CloseDate
-            FROM Opportunity
-            WHERE RecordTypeId = :scheduler.getServicingRecordTypeId()
-        ];
-        
-        System.assertEquals(5, updatedOpps.size(), 'Five Closed Won Opportunities should be updated');
-        
-        for (Opportunity opp : updatedOpps) {
-            System.assertEquals('Closed Won', opp.StageName, 'Stage should be Closed Won');
-            System.assertEquals(scheduler.getServicingRecordTypeId(), opp.RecordTypeId, 'Record Type should be Servicing');
-            System.assertEquals(Date.today().addDays(30), opp.CloseDate, 'Close Date should be updated');
-        }
+
+    private static RecordType createRecordType(String sObjectType, String name) {
+        RecordType rt = new RecordType(
+            SObjectType = sObjectType,
+            Name = name,
+            IsActive = true
+        );
+        insert rt;
+        return rt;
     }
 
     @isTest
-    static void testCreateServicingOpportunityFailure() {
+    static void testExecute() {
         Test.startTest();
         CreateServicingOpportunity scheduler = new CreateServicingOpportunity();
-        scheduler.execute(null);
+        String cronExpression = '0 0 0 1 * ?';
+        System.schedule('CreateServicingOpportunityScheduler', cronExpression, scheduler);
         Test.stopTest();
- 
-        List<Opportunity> updatedOpps = [
-            SELECT Id
-            FROM Opportunity
-            WHERE RecordTypeId = :scheduler.getServicingRecordTypeId()
-        ];
-        
-        System.assertEquals(0, updatedOpps.size(), 'No Opportunities should be updated');
+
+        // Verify that closed 'New Deal' opportunities are moved to 'Servicing'
+        List<Opportunity> servicingOpps = [SELECT Id FROM Opportunity WHERE RecordTypeId = :scheduler.getServicingRecordTypeId()];
+        System.assertEquals(3, servicingOpps.size(), 'Expected 3 opportunities in Servicing Record Type');
+
+        // Verify that existing 'Servicing' opportunities are moved back to 'New Deal'
+        List<Opportunity> newDealOpps = [SELECT Id FROM Opportunity WHERE RecordTypeId = :scheduler.getNewDealRecordTypeId()];
+        System.assertEquals(5, newDealOpps.size(), 'Expected 5 opportunities in New Deal Record Type');
+
+        // Verify that the DaysInNewDealRT__c field is updated for 'New Deal' opportunities
+        List<Opportunity> updatedNewDealOpps = [SELECT DaysInNewDealRT__c FROM Opportunity WHERE RecordTypeId = :scheduler.getNewDealRecordTypeId()];
+        for (Opportunity opp : updatedNewDealOpps) {
+            System.assert(opp.DaysInNewDealRT__c >= 210, 'DaysInNewDealRT__c should be greater than or equal to 210');
+        }
     }
 }

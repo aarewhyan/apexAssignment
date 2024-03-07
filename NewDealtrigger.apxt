@@ -1,0 +1,19 @@
+trigger NewDealtrigger on Opportunity (after update) {
+    RecordType recordType = [SELECT Id FROM RecordType WHERE SObjectType = 'Opportunity' AND Name = 'New Deal' LIMIT 1];
+    Id newDealRecordTypeId = recordType.Id;
+    List<Opportunity> oppsToUpdate = new List<Opportunity>();
+    
+    for (Opportunity opp : Trigger.new) {
+        Opportunity oldOpp = Trigger.oldMap.get(opp.Id);
+        
+        // Check if the opportunity was closed and the record type is not already 'New Deal'
+        if (opp.StageName == 'Closed Won' && opp.RecordTypeId != newDealRecordTypeId && oldOpp.StageName != 'Closed Won') {
+            opp.RecordTypeId = newDealRecordTypeId;
+            oppsToUpdate.add(opp);
+        }
+    }
+    
+    if (!oppsToUpdate.isEmpty()) {
+        update oppsToUpdate;
+    }
+}

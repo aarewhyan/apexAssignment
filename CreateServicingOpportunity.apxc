@@ -1,46 +1,65 @@
 //String cronExpression = '0 0 0 1 * ?'; 
 //String jobName = 'CreateServicingOpportunityScheduler';
 //System.schedule(jobName, cronExpression, new CreateServicingOpportunity());
+public class CreateServicingOpportunity implements Schedulable {
 
-public class CreateServicingOpportunity implements Schedulable {    
     public Id getServicingRecordTypeId() {
         RecordType recordType = [SELECT Id FROM RecordType WHERE SObjectType = 'Opportunity' AND Name = 'Servicing' LIMIT 1];
         return recordType.Id;
-    }    
+    }
+
+    public Id getNewDealRecordTypeId() {
+        RecordType recordType = [SELECT Id FROM RecordType WHERE SObjectType = 'Opportunity' AND Name = 'New Deal' LIMIT 1];
+        return recordType.Id;
+    }
+
     public void execute(SchedulableContext sc) {
+        Date thirtyDaysFromNow = Date.today().addDays(30);
         Date sixMonthsAgo = Date.today().addMonths(-6);
-        Date closedDate = Date.today().addDays(30);
-        
-        // Get the 'Servicing' Record Type Id
+
+        // Get the 'Servicing' and 'New Deal' Record Type Ids
         Id servicingRecordTypeId = getServicingRecordTypeId();
+        Id newDealRecordTypeId = getNewDealRecordTypeId();
         
-        // Update existing 'Servicing' opportunities to remove them from the 'Servicing' record type before adding the new records
-        List<Opportunity> existingServicingOpps = [SELECT Id, RecordTypeId
-                                                   FROM Opportunity
-                                                   WHERE RecordTypeId = :servicingRecordTypeId];
+        //update the counter to show how long ago it was closed
+        List<Opportunity> oppsInNewDealtRT = [SELECT Id, DaysInNewDealRT__c
+                                          FROM Opportunity
+                                          WHERE RecordTypeId = :newDealRecordTypeId];
+
+        for (Opportunity opp : oppsInNewDealRT) {
+            opp.DaysInNewDealRT__c += 30;
+        }
+
+        if (!oppsInNewDealRT.isEmpty()) {
+            update oppsInNewDealRT;
+        }
+
+        // Get the existing 'Servicing' opportunities
+        List<Opportunity> existingServicingOpps = [SELECT Id FROM Opportunity WHERE RecordTypeId = :servicingRecordTypeId];
+
+        // Refresh the existing 'Servicing' opportunities for it to have updated values every month
         if (!existingServicingOpps.isEmpty()) {
             for (Opportunity opp : existingServicingOpps) {
-                opp.RecordTypeId = null; // Set to null to remove the record type
+                opp.RecordTypeId = newDealRecordTypeId;
             }
             update existingServicingOpps;
         }
-        
-        List<Opportunity> closedWonOpps = [SELECT Id, Name, AccountId, StageName, CloseDate
-                                           FROM Opportunity
-                                           WHERE StageName = 'Closed Won'
-                                           AND CloseDate < :sixMonthsAgo];
-        
+
+        // Get the 'New Deal' opportunities with close date within the next 30 days
+        List<Opportunity> newDealOppsToMove = [SELECT Id, Name, AccountId, StageName, CloseDate
+                                                FROM Opportunity
+                                                WHERE RecordTypeId = :newDealRecordTypeId
+                                                AND DaysInNewDealRT__c >= :sixMonthsAgo.daysBetween(Date.today())
+                                                AND CloseDate <= :thirtyDaysFromNow];
+
         List<Opportunity> oppsToUpdate = new List<Opportunity>();
-        
-        for (Opportunity opp : closedWonOpps) {
+        for (Opportunity opp : newDealOppsToMove) {
             opp.RecordTypeId = servicingRecordTypeId;
-            opp.StageName = 'Closed Won';
-            opp.CloseDate = closedDate;
             oppsToUpdate.add(opp);
         }
-        
+
         if (!oppsToUpdate.isEmpty()) {
             update oppsToUpdate;
         }
-    }    
+    }
 }
