@@ -1,0 +1,46 @@
+//String cronExpression = '0 0 0 1 * ?'; 
+//String jobName = 'CreateServicingOpportunityScheduler';
+//System.schedule(jobName, cronExpression, new CreateServicingOpportunity());
+
+public class CreateServicingOpportunity implements Schedulable {    
+    public Id getServicingRecordTypeId() {
+        RecordType recordType = [SELECT Id FROM RecordType WHERE SObjectType = 'Opportunity' AND Name = 'Servicing' LIMIT 1];
+        return recordType.Id;
+    }    
+    public void execute(SchedulableContext sc) {
+        Date sixMonthsAgo = Date.today().addMonths(-6);
+        Date closedDate = Date.today().addDays(30);
+        
+        // Get the 'Servicing' Record Type Id
+        Id servicingRecordTypeId = getServicingRecordTypeId();
+        
+        // Update existing 'Servicing' opportunities to remove them from the 'Servicing' record type before adding the new records
+        List<Opportunity> existingServicingOpps = [SELECT Id, RecordTypeId
+                                                   FROM Opportunity
+                                                   WHERE RecordTypeId = :servicingRecordTypeId];
+        if (!existingServicingOpps.isEmpty()) {
+            for (Opportunity opp : existingServicingOpps) {
+                opp.RecordTypeId = null; // Set to null to remove the record type
+            }
+            update existingServicingOpps;
+        }
+        
+        List<Opportunity> closedWonOpps = [SELECT Id, Name, AccountId, StageName, CloseDate
+                                           FROM Opportunity
+                                           WHERE StageName = 'Closed Won'
+                                           AND CloseDate < :sixMonthsAgo];
+        
+        List<Opportunity> oppsToUpdate = new List<Opportunity>();
+        
+        for (Opportunity opp : closedWonOpps) {
+            opp.RecordTypeId = servicingRecordTypeId;
+            opp.StageName = 'Closed Won';
+            opp.CloseDate = closedDate;
+            oppsToUpdate.add(opp);
+        }
+        
+        if (!oppsToUpdate.isEmpty()) {
+            update oppsToUpdate;
+        }
+    }    
+}

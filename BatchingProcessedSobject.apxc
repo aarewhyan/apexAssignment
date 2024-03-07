@@ -1,0 +1,22 @@
+public class BatchingProcessedSobject implements Database.Batchable<SObject>, Database.Stateful {
+    
+    public String fieldName;
+    public Map<String, List<SObject>> resultMap;
+    
+    public BatchingProcessedSobject(String fieldName) {
+        this.fieldName = fieldName;
+    }
+    
+    public Database.QueryLocator start(Database.BatchableContext bc) {
+        return Database.getQueryLocator([SELECT Id, Name, Industry FROM Account]);
+    }
+    
+    public void execute(Database.BatchableContext bc, List<SObject> scope) {
+        resultMap = ProcessSobject.processRecords(scope, fieldName);
+    }
+    
+    public void finish(Database.BatchableContext bc) {
+        // Process the final resultMap as needed
+        System.debug('Final resultMap: ' + resultMap);
+    }
+}

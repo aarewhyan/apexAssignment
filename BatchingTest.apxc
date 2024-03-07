@@ -1,0 +1,67 @@
+@isTest
+private class BatchingTest {
+    static List<Account> testAccounts;
+    static Map<String, List<SObject>> successResultMap;
+
+    @testSetup
+    static void setupTestData() {
+        testAccounts = new List<Account>{
+            new Account(Name = 'ABC Corp', Industry = 'Technology'),
+            new Account(Name = 'XYZ Inc', Industry = 'Finance'),
+            new Account(Name = 'Acme Ltd', Industry = 'Technology'),
+            new Account(Name = 'Global Solutions', Industry = 'Healthcare'),
+            new Account(Name = 'Alpha Corporation', Industry = 'Finance')
+        };
+        insert testAccounts;
+        
+        // Prepare the expected result map for success scenarios
+        successResultMap = new Map<String, List<SObject>>{'Technology' => new List<Account>{testAccounts[0], testAccounts[2]},
+            'Finance' => new List<Account>{testAccounts[1], testAccounts[4]},
+            'Healthcare' => new List<Account>{testAccounts[3]}
+        };
+    }
+
+    static void validateSuccess(Map<String, List<SObject>> resultMap) {
+        System.assertEquals(successResultMap, resultMap, 'Incorrect result map');
+    }
+    
+    static void validateFailure(Map<String, List<SObject>> resultMap) {
+        System.assertEquals(null, resultMap, 'Result map should be null for failure scenarios');
+    }
+    
+    @isTest
+    static void testBatchingProcessedSobject() {
+        Test.startTest();
+        BatchingProcessedSobject batchInstance = new BatchingProcessedSobject('Industry');
+        Id batchId = Database.executeBatch(batchInstance);
+        Test.stopTest();
+        
+        validateSuccess(batchInstance.resultMap);
+    }
+
+    @isTest
+    static void testProcessSobject() {
+        Map<String, List<SObject>> resultMap = ProcessSobject.processRecords(testAccounts, 'Industry');
+        
+        validateSuccess(resultMap);
+    }
+
+    @isTest
+    static void testBatchingProcessedSobjectFailure() {
+        Test.startTest();
+        // Instantiate and execute the batch class with an invalid field name
+        BatchingProcessedSobject batchInstance = new BatchingProcessedSobject('InvalidField');
+        Id batchId = Database.executeBatch(batchInstance);
+        Test.stopTest();
+        
+        validateFailure(batchInstance.resultMap);
+    }
+
+    @isTest
+    static void testProcessSobjectFailure() {
+        // Test the helper method with an invalid field name
+        Map<String, List<SObject>> resultMap = ProcessSobject.processRecords(testAccounts, 'InvalidField');
+
+        validateFailure(resultMap);
+    }
+}

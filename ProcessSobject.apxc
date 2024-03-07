@@ -1,0 +1,19 @@
+public class ProcessSobject {
+    
+    public static Map<String, List<SObject>> processRecords(List<SObject> records, String fieldName) {
+        Map<String, List<SObject>> resultMap = new Map<String, List<SObject>>();
+        
+        for (SObject obj : records) {
+            String fieldValue = (String) obj.get(fieldName);
+            
+            if (!resultMap.containsKey(fieldValue)) {
+                resultMap.put(fieldValue, new List<SObject>());
+            }
+            
+            resultMap.get(fieldValue).add(obj);
+        }
+        
+        return resultMap;
+    }
+
+}
